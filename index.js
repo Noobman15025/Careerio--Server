@@ -18,9 +18,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 const corsOptions = {
-    origin: ["https://careerdotio.vercel.app"],
+    origin: [
+        "https://careerdotio.vercel.app",
+    ],
     credentials: true
-}
+};
+
 
 app.use(cors(corsOptions));
 
@@ -41,5 +44,6 @@ app.get("/", (req, res) => {
 
 app.listen(PORT, () => {
     connectDB();
-    console.log(`Server running at port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 })
+

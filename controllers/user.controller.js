@@ -4,113 +4,159 @@ import jwt from "jsonwebtoken";
 import getDataUri from "../utils/datauri.js";
 import cloudinary from "../utils/cloudinary.js";
 
+// ==================== REGISTER ====================
 export const register = async (req, res) => {
     try {
         const { fullname, email, phoneNumber, password, role } = req.body;
 
         if (!fullname || !email || !phoneNumber || !password || !role) {
             return res.status(400).json({
-                message: "Something is missing",
-                success: false
-            });
-        };
-        const file = req.file;
-        const fileUri = getDataUri(file);
-        const cloudResponse = await cloudinary.uploader.upload(fileUri.content);
-
-        const user = await User.findOne({ email });
-        if (user) {
-            return res.status(400).json({
-                message: 'User already exist with this email.',
+                message: "All fields are required.",
                 success: false,
-            })
+            });
         }
+
+        // Handle profile file
+        let profileUrl, profileName;
+        if (req.file) {
+            const fileUri = getDataUri(req.file);
+            const cloudResponse = await cloudinary.uploader.upload(fileUri.content);
+            profileUrl = cloudResponse.secure_url;
+            profileName = req.file.originalname;
+        }
+
+        // Check if user exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({
+                message: "User already exists with this email.",
+                success: false,
+            });
+        }
+
+        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        await User.create({
+        // Create user
+        const user = await User.create({
             fullname,
             email,
             phoneNumber,
             password: hashedPassword,
             role,
             profile: {
-                profilePhoto: cloudResponse.secure_url,
-            }
+                profilePhoto: profileUrl || "",
+                profilePhotoOriginalName: profileName || "",
+            },
         });
 
         return res.status(201).json({
             message: "Account created successfully.",
-            success: true
+            success: true,
+            user: {
+                _id: user._id,
+                fullname: user.fullname,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                role: user.role,
+                profile: user.profile,
+            },
         });
     } catch (error) {
-        console.log(error);
+        console.error(error);
+        return res.status(500).json({ message: "Server error", success: false });
     }
-}
+};
+
+// ==================== LOGIN ====================
 export const login = async (req, res) => {
     try {
         const { email, password, role } = req.body;
 
         if (!email || !password || !role) {
             return res.status(400).json({
-                message: "Something is missing",
-                success: false
+                message: "All fields are required.",
+                success: false,
             });
-        };
-        let user = await User.findOne({ email });
+        }
+
+        // Find user
+        const user = await User.findOne({ email });
         if (!user) {
             return res.status(400).json({
                 message: "Incorrect email or password.",
                 success: false,
-            })
+            });
         }
+
+        // Check password
         const isPasswordMatch = await bcrypt.compare(password, user.password);
         if (!isPasswordMatch) {
             return res.status(400).json({
                 message: "Incorrect email or password.",
                 success: false,
-            })
-        };
-        // check role is correct or not
+            });
+        }
+
+        // Check role
         if (role !== user.role) {
             return res.status(400).json({
-                message: "Account doesn't exist with current role.",
-                success: false
+                message: "Account does not exist with this role.",
+                success: false,
+            });
+        }
+
+        // Generate JWT
+        const token = jwt.sign({ userId: user._id }, process.env.SECRET_KEY, {
+            expiresIn: "1d",
+        });
+
+        // Send cookie + response
+        return res
+            .status(200)
+            .cookie("token", token, {
+                httpOnly: true,
+                secure: true, // must be true on Vercel
+                sameSite: "none", // required for cross-origin
+                maxAge: 24 * 60 * 60 * 1000, // 1 day
             })
-        };
-
-        const tokenData = {
-            userId: user._id
-        }
-        const token = await jwt.sign(tokenData, process.env.SECRET_KEY, { expiresIn: '1d' });
-
-        user = {
-            _id: user._id,
-            fullname: user.fullname,
-            email: user.email,
-            phoneNumber: user.phoneNumber,
-            role: user.role,
-            profile: user.profile
-        }
-
-        return res.status(200).cookie("token", token, { maxAge: 1 * 24 * 60 * 60 * 1000, httpsOnly: true, sameSite: 'strict' }).json({
-            message: `Welcome back ${user.fullname}`,
-            user,
-            success: true
-        })
+            .json({
+                message: `Welcome back ${user.fullname}`,
+                success: true,
+                user: {
+                    _id: user._id,
+                    fullname: user.fullname,
+                    email: user.email,
+                    phoneNumber: user.phoneNumber,
+                    role: user.role,
+                    profile: user.profile,
+                },
+            });
     } catch (error) {
-        console.log(error);
+        console.error(error);
+        return res.status(500).json({ message: "Server error", success: false });
     }
-}
+};
+// ==================== LOGOUT ====================
 export const logout = async (req, res) => {
     try {
-        return res.status(200).cookie("token", "", { maxAge: 0 }).json({
-            message: "Logged out successfully.",
-            success: true
-        })
+        return res
+            .status(200)
+            .cookie("token", "", {
+                httpOnly: true,
+                secure: true,
+                sameSite: "none",
+                maxAge: 0,
+            })
+            .json({
+                message: "Logged out successfully.",
+                success: true,
+            });
     } catch (error) {
-        console.log(error);
+        console.error(error);
+        return res.status(500).json({ message: "Server error", success: false });
     }
-}
+};
 export const updateProfile = async (req, res) => {
     try {
         const { fullname, email, phoneNumber, bio, skills } = req.body;
