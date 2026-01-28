@@ -19,7 +19,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 const corsOptions = {
     origin: [
-        "https://careerdotio.vercel.app",
+        "https://careerio-frontend.vercel.app"
     ],
     credentials: true
 };
